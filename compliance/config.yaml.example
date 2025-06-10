@@ -1,0 +1,21 @@
+# Example configuration file for the compliance script
+# Copy this file to config.yaml and update with your actual values
+
+# Cisco credentials for bringing interfaces back up
+ciscoUsername: "your_cisco_username"
+ciscoPassword: "your_cisco_password"
+
+# Slack settings
+posturl: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+
+# Channel for responses
+default_channel: "#network-alerts"
+slack_user: "logzilla-bot"
+
+# Interface recovery settings
+command_delay: 10
+timeout: 10
+
+# Set to true to automatically bring interfaces back up
+# Set to false to use interactive buttons via the slackbot
+auto_remediate: false

@@ -1,0 +1,24 @@
+display_information:
+  name: LogZilla Network Monitor
+  description: Monitor and manage network interfaces through interactive Slack notifications
+  background_color: "#9C1A22"
+
+features:
+  bot_user:
+    display_name: LogZilla Bot
+    always_online: true
+
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - incoming-webhook
+      - commands
+
+settings:
+  interactivity:
+    is_enabled: true
+    request_url: "https://logzilla.ngrok.io/slack/actions"
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

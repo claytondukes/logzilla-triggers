@@ -1,0 +1,43 @@
+# Slackbot Interactive Server Compose File
+
+services:
+  interactive_server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: interactive-server
+    environment:
+      - PORT=8080
+      - FLASK_DEBUG=0
+      - SLACK_VERIFY_TOKEN=${SLACK_VERIFY_TOKEN:-}
+      - CONFIG_FILE=/app/config.yaml
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./slack_server.py:/app/slack_server.py
+      - ../shared/slack_notifier.py:/app/slack_notifier.py
+      - ../shared/cisco_device_manager.py:/app/cisco_device_manager.py
+      - ../shared/utils.py:/app/utils.py
+      - ./config.yaml:/app/config.yaml
+    networks:
+      - interactive_network
+    restart: always
+    
+  interactive_ngrok:
+    image: ngrok/ngrok:latest
+    container_name: interactive-ngrok
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    command: http interactive-server:8080 --domain=logzilla.ngrok.io --log=stdout --log-format=json
+    networks:
+      - interactive_network
+    ports:
+      - "4040:4040"  # Expose ngrok web UI
+    stdin_open: true
+    tty: true
+    depends_on:
+      - interactive_server
+
+networks:
+  interactive_network:
+    driver: bridge

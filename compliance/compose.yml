@@ -1,0 +1,26 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: compliance-script-server
+    environment:
+      SCRIPTS_ENABLED: "1"
+      SCRIPTS_DIR: /scripts
+      SCRIPTS_LOGS_DIR: /var/log/logzilla/scripts
+      CONFIG_FILE: /scripts/config.yaml
+    volumes:
+      - ./compliance.py:/scripts/compliance.py
+      - ../shared/slack_notifier.py:/scripts/slack_notifier.py
+      - ../shared/cisco_device_manager.py:/scripts/cisco_device_manager.py
+      - ../shared/utils.py:/scripts/utils.py
+      - ./config.yaml:/scripts/config.yaml
+      - /var/log/logzilla/scripts:/var/log/logzilla/scripts
+    networks:
+      - lz_network
+    restart: always
+
+networks:
+  lz_network:
+    name: lz_main
+    external: true

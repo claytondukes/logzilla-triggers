@@ -1,0 +1,29 @@
+# Example configuration file for the Slack interactive button server
+# Copy this file to config.yaml and update with your actual values
+
+# Cisco credentials for bringing interfaces back up
+ciscoUsername: "your_cisco_username"
+ciscoPassword: "your_cisco_password"
+
+# Slack settings
+posturl: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+
+# Channel for responses
+default_channel: "#network-alerts"
+slack_user: "logzilla-bot"
+
+# Slack App ID (found in Basic Information)
+slack_app_id: "YOUR_SLACK_APP_ID"
+
+# Interface recovery settings
+command_delay: 10
+timeout: 10
+
+# Optional Slack verification token for request validation
+SLACK_VERIFY_TOKEN: "your_slack_verification_token"
+
+# Flag to enable interactive buttons
+use_interactive_buttons: true
+
+# Ngrok URL for interactive buttons (or your permanent URL if in production)
+ngrok_url: "https://your-tunnel.ngrok.io"
