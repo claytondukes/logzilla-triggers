@@ -4,6 +4,7 @@
 .repomix-output.xml
 .repomixignore
 repomix.config.json
+repomix-output.xml
 
 # Environment variables & secrets
 .env
