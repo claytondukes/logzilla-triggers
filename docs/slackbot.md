@@ -1,89 +1,117 @@
-# Slack Interactive Button Server Documentation
+# Slack Interactive Server Documentation
 
 ## Overview
 
-The Slack Interactive Button Server component handles user interactions from Slack alert messages, enabling network operations teams to take corrective actions directly from Slack notifications. When an interface down event is detected, users can click interactive buttons to bring the interface back up or acknowledge the alert.
+The Slack interactive server is a key component that extends the basic LogZilla custom script functionality by enabling interactive remediation through Slack buttons. This server receives and processes button clicks from Slack messages, then connects to Cisco devices to perform the requested actions.
 
-## Architecture
+## How It Works
 
-This component runs as a separate service from the main compliance script to provide better stability and independent operation. It exposes an API endpoint that Slack calls when users click interactive buttons in notifications.
+### Button Callback Flow
 
-## Components
+```mermaid
+sequenceDiagram
+    participant User
+    participant Slack
+    participant NgrokTunnel
+    participant InteractiveServer
+    participant CiscoDevice
+    
+    User->>Slack: Clicks "Fix It" button
+    Slack->>NgrokTunnel: Sends callback with payload
+    NgrokTunnel->>InteractiveServer: Forwards request to server
+    InteractiveServer->>InteractiveServer: Verify request authenticity
+    InteractiveServer->>InteractiveServer: Parse device & interface
+    InteractiveServer->>Slack: Send "Processing" response
+    InteractiveServer->>CiscoDevice: SSH connection
+    InteractiveServer->>CiscoDevice: Execute no shutdown command
+    CiscoDevice-->>InteractiveServer: Command result
+    InteractiveServer->>Slack: Send success/failure notification
+    Slack-->>User: Updated message in channel
+```
 
-- **Flask Server**: Handles HTTP requests from Slack
-- **Slack Request Verification**: Validates incoming requests from Slack
-- **CiscoDeviceManager Integration**: Executes network device commands
-- **Response Handler**: Sends confirmation/error messages back to Slack
+### Key Features
+
+- **Request Verification**: Validates incoming requests are legitimate Slack callbacks
+- **Button Action Handling**: Processes different button actions (fix, acknowledge)
+- **Device Interaction**: Uses shared CiscoDeviceManager for device connections
+- **Immediate Feedback**: Sends immediate acknowledgments and final results to Slack
+- **Error Handling**: Robust error reporting for connection or command failures
 
 ## Configuration
 
-The Slack Interactive Button Server uses the same `config.yaml` file as the main compliance script. Key settings include:
+### Required Configuration
 
 ```yaml
-# Cisco credentials (used by the Slackbot to execute commands)
-ciscoUsername: "admin"
-ciscoPassword: "secure_password"
-timeout: 10  # Connection timeout in seconds
+# Cisco device access credentials
+ciscoUsername: "your_cisco_username"
+ciscoPassword: "your_cisco_password"
 
-# Slack settings (used for sending responses back to Slack)
+# Slack integration settings
 posturl: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
-default_channel: "#network-alerts"  # Default channel for notifications
+default_channel: "#network-alerts"
 
 # Interactive button settings
 use_interactive_buttons: true
-ngrok_url: "https://logzilla.ngrok.io"  # Public URL for Slack callbacks
+ngrok_url: "https://your-tunnel.ngrok.io"
 ```
 
-### Environment Variables
+### Optional Configuration
 
-These environment variables override settings in the config file:
+```yaml
+# Slack verification
+SLACK_VERIFY_TOKEN: "your_slack_verification_token"
 
-```
-# Security token (required)
-SLACK_VERIFY_TOKEN=your_verification_token
+# Performance settings
+timeout: 10
+command_delay: 5
 
-# Server configuration
-PORT=8080  # Port for the Flask server
-FLASK_DEBUG=0  # Enable/disable debug mode
-
-# Configuration file path
-CONFIG_FILE=/path/to/config.yaml
+# Appearance settings
+slack_user: "logzilla-bot" 
 ```
 
-## Security
+## Ngrok Integration
 
-The server implements Slack request verification using a token-based approach:
-- Request verification method validates that incoming requests originate from your Slack workspace
-- Token validation prevents unauthorized API access
-- For production environments, implementing Slack signing secret verification is recommended
+The server requires public internet accessibility to receive callbacks from Slack. This is achieved using ngrok:
 
-## Deployment
+1. The ngrok service creates a secure tunnel to the interactive server
+2. Slack sends button click events to the ngrok URL
+3. Ngrok forwards these requests to the local server
 
-The Slack Interactive Button Server is deployed using Docker Compose:
+In production, ngrok should be replaced with a permanent URL solution.
 
-```bash
-# Start the slackbot service
-docker compose -f docker-compose.slack.yml up -d
+## Slack App Configuration
 
-# View logs
-docker logs slackbot-server
+A Slack app must be created with:
 
-# Stop the service
-docker compose -f docker-compose.slack.yml down
-```
+1. Interactive Components enabled
+2. Request URL set to your ngrok URL + `/slack/actions` path
+3. Appropriate OAuth scopes for sending messages
 
-## ngrok Integration
+The included `slack-app-manifest.yaml` provides a template for the required configuration.
 
-Public internet exposure for the Slack API endpoint is provided through ngrok:
+## Security Considerations
 
-- Automatically creates a secure tunnel to your local server
-- Custom domain capability for consistent URL (requires ngrok paid plan)
-- Dashboard for traffic inspection at http://localhost:4040
+The current implementation includes basic request verification using a token. For production use, consider:
 
-## Troubleshooting
+1. Implementing Slack's full request signing verification
+2. Using HTTPS for all communications
+3. Restricting access to the interactive server
+4. Implementing rate limiting for button actions
 
-Common issues:
+## Adding New Button Actions
 
-- **Button clicks returning errors**: Verify ngrok connection and Slack verification token
-- **ngrok not connecting**: Check ngrok authentication token and network connectivity
-- **Interface recovery failing**: Verify Cisco device credentials and permissions
+To add a new interactive button action:
+
+1. Add the button to the `send_interface_notification` method in `SlackNotifier`
+2. Create a handler function in `slack_server.py`
+3. Add the action to the routing logic in the `slack_actions` function
+4. Update the action value format if additional parameters are needed
+
+## Error Handling
+
+The server includes error handling for:
+
+- Invalid request formats
+- Connection failures to Cisco devices
+- Command execution failures
+- Response URL errors when updating Slack messages
