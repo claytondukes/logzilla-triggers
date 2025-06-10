@@ -45,9 +45,10 @@ class SlackNotifier:
             logging.info("Using Slack webhook URL for notifications (limited interactivity support)")
     
     def send_interface_notification(self, event_host, interface, state, 
-                               description, event_message, status, 
-                               emoji, color, mnemonic, 
-                               use_interactive_buttons=False, ngrok_url=""):
+                           description, event_message, status, 
+                           emoji, color, mnemonic, 
+                           use_interactive_buttons=False, ngrok_url="",
+                           user_tags=None):
         """
         Send interface status notification to Slack.
         
@@ -63,7 +64,8 @@ class SlackNotifier:
             mnemonic (str): Cisco mnemonic associated with the event.
             use_interactive_buttons (bool): Whether to include interactive buttons.
             ngrok_url (str): URL for ngrok tunnel for button callbacks.
-            
+            user_tags (dict): Dictionary of user-defined tags with additional metadata.
+        
         Returns:
             bool: True if notification was sent successfully, False otherwise.
         """
@@ -79,115 +81,203 @@ class SlackNotifier:
         # Enhanced header with status badge
         status_display = f"{emoji} {status}"
         
-        # Network status icon based on state
-        network_icon = "🔌" if state == "down" else "⚡"
-        device_icon = "🖧" if "router" in event_host.lower() else "🖥️"
+        # Initialize user_tags if None
+        if user_tags is None:
+            user_tags = {}
+            
+        # Extract key device information from user_tags
+        device_role = user_tags.get('Device-Role', '')
+        device_type = user_tags.get('Device-Type', '')
+        device_id = user_tags.get('DeviceID', '')
+        criticality = user_tags.get('Criticality', '')
+        location = user_tags.get('Location', '')
+        mgmt_ip = user_tags.get('Management-IP', '')
+        model = user_tags.get('Model', '')
+        software = user_tags.get('Software-Version', '')
+        contact = user_tags.get('Contact', '')
+        contact_phone = user_tags.get('Contact-Phone', '')
+        zone = user_tags.get('Zone', '')
         
-        # Create blocks for the message with enhanced formatting
+        # Professional device type icons
+        device_icon_map = {
+            'Router': ':desktop_computer:',
+            'Switch': ':control_knobs:',
+            'Firewall': ':fire_extinguisher:',
+            'WAP': ':antenna_bars:',
+            'Edge': ':electric_plug:',
+            'Core': ':globe_with_meridians:'
+        }
+        
+        # Get appropriate device icon
+        device_icon = device_icon_map.get(device_type, ':network:') 
+        if device_role:
+            device_icon = device_icon_map.get(device_role, device_icon)
+        
+        # Status colors
+        status_color = color
+        
+        # Set criticality indicator - only for down events
+        criticality_indicator = ""
+        if state == "down":
+            if criticality == "Critical":
+                criticality_indicator = " :bangbang: *CRITICAL* :bangbang:"
+            elif criticality == "High":
+                criticality_indicator = " :warning: *HIGH PRIORITY*"
+        
+        # Create professional blocks for the message
         blocks = [
-            # Banner header with eye-catching design
+            # Professional header with device and interface info
             {
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": f"{status_display}: Interface {interface} on {event_host}"
+                    "text": f"Interface Alert: {event_host}{criticality_indicator}",
+                    "emoji": True
                 }
             },
             
-            # Divider for visual separation
+            # Clean divider
             {"type": "divider"},
             
-            # Main information section with enhanced icons
+            # Primary alert information in a cleaner format
             {
                 "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": f"*Device:* {device_icon}\n{event_host}"
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": f"*Interface:* {network_icon}\n{interface}"
-                    }
-                ]
-            },
-            
-            # Status information with visual indicators
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": f"*State:* {emoji}\n{state.upper()}"
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": "*Description:*\n" + (description if description else "No description found")
-                    }
-                ]
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Status:* {emoji} *{status}*\n*Interface:* `{interface}`\n*Event:* {mnemonic}"
+                }
             }
         ]
         
-        # Add program and severity with enhanced formatting
-        program_fields = []
-        if True:  # Always show program info
-            program_fields.append({
-                "type": "mrkdwn",
-                "text": "*Program:* 📟\nCisco"
-            })
+        # Device information section - more structured
+        device_info = []
         
-        if severity:
-            # Visual severity indicator
-            severity_icon = "🔥" if int(severity) <= 3 else "⚠️" if int(severity) <= 5 else "ℹ️"
-            program_fields.append({
+        if device_type or model:
+            device_type_text = f"*Device Type:* {device_type + ' ' + model if device_type and model else device_type or model}"
+            device_info.append({
                 "type": "mrkdwn",
-                "text": f"*Severity:* {severity_icon}\n{severity}/10"
+                "text": device_type_text
             })
             
-        if program_fields:
+        if software:
+            device_info.append({
+                "type": "mrkdwn",
+                "text": f"*Software:* {software}"
+            })
+            
+        if location or zone:
+            location_text = f"*Location:* {location + ' / ' + zone if location and zone else location or zone}"
+            device_info.append({
+                "type": "mrkdwn",
+                "text": location_text
+            })
+            
+        if mgmt_ip:
+            device_info.append({
+                "type": "mrkdwn",
+                "text": f"*Management IP:* `{mgmt_ip}`"
+            })
+            
+        # Add device info section if we have any data
+        if device_info:
             blocks.append({
                 "type": "section",
-                "fields": program_fields
+                "fields": device_info
             })
         
-        # Add the event message with enhanced code block formatting
+        # Contact information if available
+        contact_info = []
+        
+        if contact:
+            contact_info.append({
+                "type": "mrkdwn",
+                "text": f"*Contact:* {contact}"
+            })
+            
+        if contact_phone:
+            contact_info.append({
+                "type": "mrkdwn",
+                "text": f"*Phone:* {contact_phone}"
+            })
+        
+        # Add a severity indicator
+        if severity:
+            severity_level = int(severity)
+            # Professional severity indicator
+            if severity_level <= 3:
+                severity_block = f"*Severity:* :red_circle: {severity}/10 (Critical)"
+            elif severity_level <= 5:
+                severity_block = f"*Severity:* :large_yellow_circle: {severity}/10 (Warning)"
+            else:
+                severity_block = f"*Severity:* :large_blue_circle: {severity}/10 (Info)"
+                
+            contact_info.append({
+                "type": "mrkdwn",
+                "text": severity_block
+            })
+        
+        # Add contact section if we have data
+        if contact_info:
+            blocks.append({
+                "type": "section",
+                "fields": contact_info
+            })
+        
+        # Add the event message section with enterprise styling
         blocks.append({"type": "divider"})
         
+        # Format event message cleanly
+        formatted_message = event_message.strip()
+        # Remove any unwanted special characters if needed
+        formatted_message = formatted_message.replace('%', '').replace(':', ': ') if '%' in formatted_message else formatted_message
+
         blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*Event Message:* 📋"
+                "text": f"*Event Details*\n```{formatted_message}```"
             }
         })
         
-        blocks.append({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"```{event_message}```"
-            }
-        })
+        # Add additional device details if available from user_tags
+        additional_tags = []
+        for key, value in user_tags.items():
+            # Skip keys we've already used in specific fields
+            if key not in ['Device-Role', 'Device-Type', 'DeviceID', 'Criticality', 
+                           'Location', 'Management-IP', 'Model', 'Software-Version', 
+                           'Contact', 'Contact-Phone', 'Zone']:
+                if key in ['BGP', 'OSPF', 'VRF', 'Source-Interface', 'Wan-Interface']:
+                    # Network routing information is important - highlight it
+                    additional_tags.append({
+                        "type": "mrkdwn", 
+                        "text": f"*{key}:* `{value}`"
+                    })
         
-        # Add interactive buttons with enhanced visibility if requested
+        # Add additional tags if available
+        if additional_tags:
+            blocks.append({"type": "divider"})
+            blocks.append({
+                "type": "section",
+                "fields": additional_tags[:10] # Limit to 10 fields per section
+            })
+        
+        # Add interactive buttons with professional styling if requested
         if use_interactive_buttons and state == "down" and ngrok_url:
             # Make sure the ngrok URL ends with a slash
             if not ngrok_url.endswith("/"):
                 ngrok_url += "/"
             
-            # Add a divider to make buttons more prominent
+            # Add action section with clear purpose
             blocks.append({"type": "divider"})
-            
-            # Add a section explaining the available actions
             blocks.append({
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "*Available Actions:* 🛠️"
+                    "text": "*Remediation Options*"
                 }
             })
                 
-            # Add action buttons section with enhanced styling
+            # Add sleek, professional action buttons
             blocks.append({
                 "type": "actions",
                 "elements": [
@@ -195,18 +285,37 @@ class SlackNotifier:
                         "type": "button",
                         "text": {
                             "type": "plain_text",
-                            "text": "🔄 Fix Interface",
+                            "text": "Remediate Interface",
                             "emoji": True
                         },
                         "style": "primary",
                         "value": f"{event_host}|{interface}",
-                        "action_id": "fix_interface"
+                        "action_id": "fix_interface",
+                        "confirm": {
+                            "title": {
+                                "type": "plain_text",
+                                "text": "Confirm Interface Remediation"
+                            },
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": f"Are you sure you want to bring up interface `{interface}` on `{event_host}`?"
+                            },
+                            "confirm": {
+                                "type": "plain_text",
+                                "text": "Yes, Remediate"
+                            },
+                            "deny": {
+                                "type": "plain_text",
+                                "text": "Cancel"
+                            },
+                            "style": "primary"
+                        }
                     },
                     {
                         "type": "button",
                         "text": {
                             "type": "plain_text",
-                            "text": "✅ Acknowledge",
+                            "text": "Acknowledge",
                             "emoji": True
                         },
                         "value": f"{event_host}|{interface}",
@@ -217,20 +326,27 @@ class SlackNotifier:
             
             logging.info(f"Added interactive buttons with ngrok URL: {ngrok_url}slack/actions")
         
-        # Add timestamp and event ID in a footer-like context
+        # Add metadata footer with clean styling
         blocks.append({"type": "divider"})
         
+        # Create cleaner footer with event metadata and timestamp
         footer_elements = [
             {
                 "type": "mrkdwn",
-                "text": f"🕒 *Time:* {timestamp}"
+                "text": f"*Timestamp:* {timestamp}"
             }
         ]
         
         if mnemonic:
             footer_elements.append({
                 "type": "mrkdwn",
-                "text": f"🔖 *Event:* {mnemonic}"
+                "text": f"*Event Type:* {mnemonic}"
+            })
+            
+        if device_id:
+            footer_elements.append({
+                "type": "mrkdwn",
+                "text": f"*Device ID:* {device_id}"
             })
         
         blocks.append({
@@ -238,13 +354,13 @@ class SlackNotifier:
             "elements": footer_elements
         })
         
-        # Add LogZilla branding
+        # Professional LogZilla branding
         blocks.append({
             "type": "context",
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": "Powered by LogZilla Network Event Orchestrator"
+                    "text": "*Powered by LogZilla Network Event Orchestrator*"
                 }
             ]
         })

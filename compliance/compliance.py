@@ -117,6 +117,29 @@ class ComplianceApplication:
             # Ensure we disconnect cleanly
             self.cisco_manager.disconnect()
     
+    def _parse_user_tags(self):
+        """
+        Parse the EVENT_USER_TAGS environment variable and extract useful metadata.
+        
+        Returns:
+            dict: Dictionary of parsed user tags.
+        """
+        user_tags_str = os.environ.get('EVENT_USER_TAGS', '')
+        user_tags = {}
+        
+        if user_tags_str:
+            # Parse comma-separated key-value pairs
+            try:
+                tag_pairs = user_tags_str.split(',')
+                for pair in tag_pairs:
+                    if '=' in pair:
+                        key, value = pair.split('=', 1)
+                        user_tags[key.strip()] = value.strip()
+            except Exception as e:
+                logging.warning(f"Error parsing EVENT_USER_TAGS: {e}")
+                
+        return user_tags
+    
     def _handle_interface_state(self, event_host, interface, state, description, event_message):
         """
         Handle interface state changes.
@@ -129,6 +152,7 @@ class ComplianceApplication:
             event_message (str): Original event message.
         """
         mnemonic = os.environ.get('EVENT_CISCO_MNEMONIC', '')
+        user_tags = self._parse_user_tags()
         
         if state == "down":
             # Check if we should add interactive buttons
@@ -140,7 +164,8 @@ class ComplianceApplication:
                 event_host, interface, "down", description, event_message,
                 STATUS_DOWN, SLACK_EMOJI_DOWN, SLACK_COLOR_DANGER, mnemonic,
                 use_interactive_buttons=use_interactive_buttons,
-                ngrok_url=ngrok_url
+                ngrok_url=ngrok_url,
+                user_tags=user_tags
             )
             
             # Bring the interface back up if configured to do so and not using buttons
@@ -153,7 +178,8 @@ class ComplianceApplication:
             # Send notification that the interface is up
             self.slack.send_interface_notification(
                 event_host, interface, "up", description, event_message,
-                STATUS_UP, SLACK_EMOJI_UP, SLACK_COLOR_SUCCESS, mnemonic
+                STATUS_UP, SLACK_EMOJI_UP, SLACK_COLOR_SUCCESS, mnemonic,
+                user_tags=user_tags
             )
 
 
