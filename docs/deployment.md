@@ -1,127 +1,161 @@
 # Deployment Guide
 
-## System Requirements
+## Overview
 
-- Docker Engine 20.10+
-- Docker Compose 2.0+
-- Internet connectivity for Slack API calls
-- Optional: ngrok account for custom domains
+This guide covers the deployment process for the Cisco Interface Compliance system with Slack integration. The system consists of two main components that are deployed separately:
 
-## Initial Setup
+1. **Compliance Script Service**: Runs as a Docker container and integrates with LogZilla to monitor interface events
+2. **Slack Interactive Server**: Runs as a separate Docker container to handle Slack button callbacks
 
-### 1. Configure the Environment
+## Architecture Diagram
 
-Create a `.env` file in the project root:
-
-```
-# Slack API credentials - used for verifying Slack requests
-SLACK_VERIFY_TOKEN=your_verification_token
-
-# Server configuration
-PORT=8080
-FLASK_DEBUG=0
-
-# ngrok authentication
-NGROK_AUTHTOKEN=your_ngrok_auth_token
-```
-
-### 2. Configure the Application
-
-Update `config.yaml` with your specific settings:
-
-```yaml
-# Cisco credentials
-ciscoUsername: "admin"
-ciscoPassword: "secure_password"
-timeout: 10  # Connection timeout in seconds
-
-# Slack settings
-posturl: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
-default_channel: "#network-alerts"
-slack_user: "logzilla-bot"  # Bot username for display
-
-# Slack App ID (found in Basic Information)
-slack_app_id: "A123456789"
-
-# Interface recovery settings
-bring_interface_up: false  # Set to true to auto-recover interfaces
-command_delay: 10  # Delay between commands in seconds
-
-# Interactive button settings
-use_interactive_buttons: true
-ngrok_url: "https://logzilla.ngrok.io"
-
-# Security settings (can also be set as env variable)
-SLACK_VERIFY_TOKEN: "your_verification_token"
+```mermaid
+graph TD
+    subgraph "LogZilla Environment"
+        LZ[LogZilla NEO] --> |Trigger| CS[Compliance Script Container]
+    end
+    
+    subgraph "Docker Network"
+        CS --> |Shared Code| SN[Shared Modules]
+        IS[Interactive Server] --> |Shared Code| SN
+    end
+    
+    subgraph "External Services"
+        CS --> |Notification| Slack
+        IS <--> |Button Callbacks| Ngrok
+        Ngrok <--> Slack
+    end
+    
+    subgraph "Network Devices"
+        CS --> |Monitor| Devices
+        IS --> |Remediate| Devices
+    end
 ```
 
-## Deployment Options
+## Prerequisites
 
-### Option 1: Combined Deployment (Development)
+- Docker Engine (version 20.10+)
+- Docker Compose (version 2.0+)
+- Git
+- Slack workspace with admin access for creating apps
+- ngrok account (for development/testing)
+- LogZilla NEO instance (version 6.3+)
 
-For development or testing, you can run both services together:
+## Step 1: Clone the Repository
 
 ```bash
-docker compose -f compose.yml -f docker-compose.slack.yml up -d
+git clone https://github.com/your-org/lz-compliance.git
+cd lz-compliance
 ```
 
-### Option 2: Separated Deployment (Recommended for Production)
-
-Run the compliance script and Slack server independently:
-
-#### Step 1: Start the compliance monitoring service
+## Step 2: Configure the Compliance Script
 
 ```bash
-docker compose -f compose.yml up -d
+cd compliance
+cp config.yaml.example config.yaml
 ```
 
-#### Step 2: Start the Slack interactive server
+Edit `config.yaml` to include:
+- Cisco device credentials
+- Slack webhook URL or bot token
+- Auto-remediation setting (true/false)
+- Timeout and channel settings
+
+## Step 3: Configure the Slack Interactive Server
 
 ```bash
-docker compose -f docker-compose.slack.yml up -d
+cd ../slackbot
+cp config.yaml.example config.yaml
+cp .env.example .env
 ```
 
-## Slack App Configuration
+Edit `config.yaml` to include:
+- Cisco device credentials (same as compliance script)
+- Slack webhook URL or bot token
+- ngrok URL setting (or your permanent URL)
+- Enable interactive buttons setting
 
-1. Create a new Slack App at https://api.slack.com/apps
-2. Enable Interactive Components:
-   - Request URL: `https://your-ngrok-domain.ngrok.io/slack/actions`
-   - Actions: Add the actions `fix_interface` and `acknowledge`
+Edit `.env` to include:
+- NGROK_AUTHTOKEN for ngrok authentication
+- SLACK_VERIFY_TOKEN for request validation
+
+## Step 4: Create Slack App
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) and create a new app
+2. Use the provided `slack-app-manifest.yaml` as a template or configure manually:
+   - Enable Interactive Components
+   - Set the Request URL to your ngrok URL + `/slack/actions`
+   - Add necessary OAuth scopes for sending messages
 3. Install the app to your workspace
-4. Add the Bot Token to your `.env` file
 
-## Updating the ngrok URL
+## Step 5: Deploy the Services
 
-When using the free tier of ngrok, the URL changes each time the service restarts. Update your configuration:
-
-1. Get the new ngrok URL: `docker logs ngrok | grep "started tunnel"`
-2. Update the URL in `config.yaml`
-3. Update the Request URL in your Slack App settings
-
-For persistent URLs, use a paid ngrok account with reserved domains.
-
-## Monitoring and Maintenance
-
-### View Logs
+### Deploy the Compliance Script:
 
 ```bash
-# Compliance script logs
-docker logs compliance-script-server
-
-# Slack server logs
-docker logs slackbot-server
-
-# ngrok logs
-docker logs slackbot-ngrok
+cd ../compliance
+docker compose up -d
 ```
 
-### Restart Services
+Verify the container is running:
+```bash
+docker ps -a -f name=compliance-script-server
+```
+
+### Deploy the Slack Interactive Server:
 
 ```bash
-# Restart individual services
-docker restart compliance-script-server
-docker restart slackbot-server
+cd ../slackbot
+docker compose up -d
+```
 
-# Or restart all services
-docker compose -f compose.yml -f docker-compose.slack.yml restart
+Verify the containers are running:
+```bash
+docker ps -a -f name=interactive
+```
+
+## Step 6: Configure LogZilla Trigger
+
+1. In LogZilla NEO, create a new trigger
+2. Configure the trigger to match interface down events (e.g., regex pattern for "Interface X, changed state to down")
+3. Set the trigger action to execute the compliance.py script
+4. Test the trigger by simulating or generating an interface down event
+
+## Troubleshooting
+
+### Common Issues
+
+- **Script not triggering**: Check LogZilla trigger configuration and verify that environment variables are being passed correctly
+- **Slack notifications not sent**: Verify webhook URL or bot token in config.yaml
+- **Interactive buttons not working**: Check ngrok URL configuration and Slack app settings
+- **Device connection failures**: Check network connectivity and credentials
+
+### Logs
+
+- Compliance script logs: `/var/log/logzilla/scripts/`
+- Slack interactive server logs: View with `docker logs interactive-server`
+- ngrok logs: View with `docker logs interactive-ngrok`
+
+## Production Considerations
+
+- **Replace ngrok**: Use a permanent URL solution with proper SSL certificates
+- **Secrets management**: Use Docker secrets or environment variables for credentials
+- **Network security**: Restrict access to the interactive server
+- **High availability**: Consider redundant deployments
+- **Monitoring**: Implement health checks and alerting for both services
+
+## Updating the Services
+
+To update the services after code changes:
+
+```bash
+# Update compliance script
+cd compliance
+docker compose down
+docker compose up -d --build
+
+# Update interactive server
+cd ../slackbot
+docker compose down
+docker compose up -d --build
 ```

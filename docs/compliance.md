@@ -1,75 +1,93 @@
-# Cisco Interface Compliance Script Documentation
+# Compliance Script Documentation
 
 ## Overview
 
-The Cisco Interface Compliance script is a monitoring solution that checks for interface status on Cisco network devices and sends notifications when interfaces go down. It can be used as part of a LogZilla deployment or as a standalone solution.
+The compliance script is the core component that integrates with LogZilla to monitor Cisco interface status changes. When LogZilla detects a relevant event (such as an interface going down), it triggers this script, which then processes the event, connects to the device, and sends notifications through Slack.
 
-## Components
+## How It Works
 
-The compliance monitoring system consists of:
+### Trigger Mechanism
 
-- **ComplianceApplication**: Core application class that monitors Cisco device interfaces
-- **CiscoDeviceManager**: Manages connections to Cisco devices using Netmiko
-- **SlackNotifier**: Sends notifications to Slack with interactive buttons
+1. LogZilla receives a syslog message indicating an interface state change
+2. LogZilla's trigger system matches the message against configured rules
+3. When a match is found, LogZilla executes the compliance script
+4. Event details are passed to the script through environment variables
 
-## Configuration
+### Processing Flow
 
-The script is configured via `config.yaml` with the following key settings:
+```mermaid
+flowchart TD
+    A[LogZilla Event] --> B[Compliance Script]
+    B --> C{Parse Event}
+    C --> D[Extract Device & Interface]
+    D --> E[Connect to Device]
+    E --> F[Verify Interface Status]
+    F --> G{Auto Remediate?}
+    G -->|Yes| H[Fix Interface]
+    G -->|No| I[Send Interactive Notification]
+    H --> J[Send Result Notification]
+    I --> K[Wait for User Action]
+```
+
+### Key Features
+
+- **Event Parsing**: Uses regex to extract interface name and state from event messages
+- **Device Connection**: Establishes SSH connections to Cisco devices using Netmiko
+- **Diagnostics**: Performs network diagnostics when connection issues occur
+- **Interface Recovery**: Can automatically bring interfaces back up if configured
+- **Slack Notifications**: Sends detailed, formatted notifications with optional interactive buttons
+
+## Configuration Options
+
+### Required Configuration
 
 ```yaml
-# Cisco credentials
-ciscoUsername: "admin"
-ciscoPassword: "password"
+# Cisco device access credentials
+ciscoUsername: "your_cisco_username"
+ciscoPassword: "your_cisco_password"
 
-# Device configuration
-devices:
-  - hostname: "cisco-switch-1"
-    ipaddress: "10.0.0.1"
-
-# Slack configuration  
-slack:
-  posturl: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
-  channel: "#network-alerts"
-  app_id: "A123456789"
-
-# Slack interactive button settings
-use_interactive_buttons: true
-ngrok_url: "https://logzilla.ngrok.io"
+# Slack integration settings
+posturl: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+default_channel: "#network-alerts"
 ```
 
-## Deployment
+### Optional Configuration
 
-The compliance script is deployed using Docker and can be managed with Docker Compose:
+```yaml
+# Set to true for automatic remediation, false for interactive mode
+auto_remediate: false
 
-```bash
-# Start the service
-docker compose -f compose.yml up -d
+# Connection and command timing settings
+command_delay: 10
+timeout: 10
 
-# View logs
-docker logs compliance-script-server
-
-# Stop the service
-docker compose -f compose.yml down
+# Slack appearance settings
+slack_user: "logzilla-bot"
 ```
 
-## Integration with LogZilla
+## LogZilla Integration
 
-The script integrates with LogZilla's script server infrastructure for execution management:
+The script is designed to be triggered by LogZilla and expects the following environment variables:
 
-1. Place script files in LogZilla's script directory
-2. Configure script_server.yaml for execution parameters
-3. Schedule regular execution via LogZilla's UI
+- `EVENT_HOST`: The hostname of the device reporting the event
+- `EVENT_MESSAGE`: The actual message content containing interface details
+- `EVENT_SEVERITY`: The severity level of the event (optional)
 
-## Troubleshooting
+## Error Handling
 
-Common issues:
+The script includes robust error handling for various scenarios:
 
-- **Connection errors**: Verify device IP addresses and credentials
-- **Slack notifications not sending**: Check webhook URL and permissions
-- **Container startup issues**: Verify Docker and Docker Compose installation
+- **Connection Timeouts**: Performs network diagnostics and sends detailed error reports
+- **Authentication Failures**: Reports authentication issues with troubleshooting tips
+- **Parsing Failures**: Logs when it cannot extract interface information
+- **Command Execution Failures**: Reports when interface commands fail to execute
 
-## Logs
+## Development Guidelines
 
-Logs are stored in:
-- Container logs: Available via `docker logs compliance-script-server`
-- Mounted log directory: `/var/log/logzilla/scripts/`
+When modifying the compliance script:
+
+1. Maintain compatibility with LogZilla's environment variable format
+2. Test any regex changes against various interface event formats
+3. Consider error handling for new network device types
+4. Ensure the script exits cleanly to avoid zombie processes
+5. Update both automatic and interactive flows when adding new features

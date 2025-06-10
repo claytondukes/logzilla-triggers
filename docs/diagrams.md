@@ -1,146 +1,178 @@
-# System Architecture Diagrams
+# Architecture Diagrams
 
-## Complete System Flow
+## System Overview
+
+```mermaid
+flowchart LR
+    A[Compliance Script] -->|Sends Alerts| B[Slack]
+    B -->|Button Clicks| C[Slack Interactive Server]
+    C -->|Recovery Actions| D[Cisco Devices]
+    A -->|Monitors| D
+    E[LogZilla] -->|Triggers| A
+    F[shared code] -->|Used by| A
+    F -->|Used by| C
+```
+
+## Detailed Component Architecture
 
 ```mermaid
 flowchart TD
-    subgraph "Network Events"
-        A1[Interface Down Event] --> A2[Router/Switch Syslog]
-    end
-
-    subgraph "LogZilla Platform"
-        B1[LogZilla Event Collection] --> B2[Event Trigger]
-        B2 --> B3[Script Execution]
+    subgraph LogZilla
+        LZ[LogZilla Event Engine] -->|Trigger| CS[Compliance Script]
     end
     
-    subgraph "Compliance Monitoring Service"
-        C1[compliance.py] --> C2[CiscoDeviceManager]
-        C1 --> C3[SlackNotifier]
-        C2 -- "Interface Status" --> C1
+    subgraph ComplianceComponent
+        CS -->|Uses| CDM1[CiscoDeviceManager]
+        CS -->|Uses| SN1[SlackNotifier]
+        CS -->|Uses| UT1[Utilities]
     end
     
-    subgraph "Slack Interactive Server"
-        D1[slack_server.py] --> D2[Request Verification]
-        D2 --> D3[Action Handler]
-        D3 --> D4[CiscoDeviceManager]
-        D3 --> D5[SlackNotifier Response]
+    subgraph SharedModules
+        CDM1 -.->|Shared Code| CDM2[CiscoDeviceManager]
+        SN1 -.->|Shared Code| SN2[SlackNotifier]
+        UT1 -.->|Shared Code| UT2[Utilities]
     end
     
-    subgraph "External Services"
-        E1[Cisco Devices] 
-        E2[Slack API]
-        E3[ngrok Tunnel]
+    subgraph SlackInteractiveComponent
+        SS[Slack Server] -->|Uses| CDM2
+        SS -->|Uses| SN2
+        SS -->|Uses| UT2
+        SS -->|Exposed by| NG[ngrok]
     end
     
-    A2 --> B1
-    B3 --> C1
-    C2 <--> E1
-    C3 --> E2
-    E3 --> D1
-    D5 --> E2
-    D4 <--> E1
-    E2 -- "Button Clicks" --> E3
+    subgraph ExternalSystems
+        SN1 -->|Posts to| S[Slack]
+        SN2 -->|Posts to| S
+        S -->|Button Clicks| NG
+        CDM1 -->|SSH to| CD[Cisco Devices]
+        CDM2 -->|SSH to| CD
+    end
 ```
 
-## Interface Down Alert and Recovery Flow
+## Event Flow Sequence
 
 ```mermaid
 sequenceDiagram
-    participant Router as Cisco Router
     participant LZ as LogZilla
-    participant Script as compliance.py
-    participant Slack as Slack API
-    participant User as Network Admin
-    participant Server as slack_server.py
+    participant CS as Compliance Script
+    participant CD as Cisco Device
+    participant S as Slack
+    participant U as User
+    participant SS as Slack Server
     
-    Router->>LZ: Interface Down Event (syslog)
-    LZ->>Script: Trigger compliance script
-    Script->>Router: Check interface status
-    Script->>Slack: Send alert with "Fix It" button
-    Slack->>User: Display alert message
-    User->>Slack: Click "Fix It" button
-    Slack->>Server: Button action (via ngrok)
-    Server->>Server: Verify request token
-    Server->>Router: SSH and run "no shutdown"
-    Server->>Slack: Send confirmation message
-    Slack->>User: Display success notification
-    Router->>LZ: Interface Up Event (syslog)
-    Note over Router,User: Complete recovery cycle
+    LZ->>CS: Interface down event trigger
+    CS->>CD: SSH connect & verify status
+    CS->>S: Send notification with buttons
+    S-->>U: Display interface down alert
+    U->>S: Click "Fix It" button
+    S->>SS: Send button action payload
+    SS->>CD: SSH connect & run "no shutdown"
+    SS->>S: Send success/failure response
+    S-->>U: Show remediation result
 ```
 
 ## Deployment Architecture
 
 ```mermaid
-flowchart TD
-    subgraph "Docker Environment"
-        subgraph "LogZilla Container"
-            A[Compliance Script]
-            B[CiscoDeviceManager]
-            C[SlackNotifier]
+graph TD
+    subgraph DockerHost
+        subgraph ComplianceContainer
+            CS[Compliance Script]
+            SC1[Shared Code]
         end
         
-        subgraph "Slackbot Container"
-            D[Flask Server]
-            E[Request Handler]
-            F[CiscoDeviceManager]
+        subgraph SlackbotContainer
+            SS[Slack Server]
+            SC2[Shared Code]
         end
         
-        subgraph "ngrok Container"
-            G[ngrok Client]
+        subgraph NgrokContainer
+            NG[ngrok tunnel]
         end
     end
     
-    subgraph "External"
-        H[Cisco Devices]
-        I[Slack API]
-        J[ngrok Cloud Service]
+    subgraph ExternalServices
+        LZ[LogZilla]
+        S[Slack]
+        CD[Cisco Devices]
     end
     
-    A --> B
-    A --> C
-    C -- "Send Notifications" --> I
-    B <--> H
-    G <--> J
-    J <--> I
-    I -- "Button Clicks" --> J
-    J -- "Forward Requests" --> G
-    G -- "Forward Requests" --> D
-    D --> E
-    E --> F
-    F <--> H
+    LZ -->|Trigger| CS
+    CS -->|SSH| CD
+    CS -->|Post| S
+    S -->|Callback| NG
+    NG -->|Forward| SS
+    SS -->|SSH| CD
+    SS -->|Update| S
 ```
 
-## Component Dependencies
+## Data Flow Diagram
 
 ```mermaid
-classDiagram
-    class ComplianceApplication {
-        +run()
-        -check_interfaces()
-        -process_down_interfaces()
-    }
+flowchart LR
+    subgraph Inputs
+        E1[Interface down event]
+        E2[Button click event]
+    end
     
-    class CiscoDeviceManager {
-        +get_interface_status(device, interface)
-        +bring_interface_up(device, interface)
-        -connect(device)
-        -send_command(command)
-    }
+    subgraph Processing
+        P1[Event parsing]
+        P2[Device connection]
+        P3[Status verification]
+        P4[Button action handling]
+        P5[Command execution]
+    end
     
-    class SlackNotifier {
-        +send_interface_notification(device, interface, status)
-        +post_update_to_slack(response_url, message)
-        -format_message(message_data)
-    }
+    subgraph Outputs
+        O1[Slack notification]
+        O2[Interface recovery]
+        O3[Status update]
+    end
     
-    class FlaskServer {
-        +slack_actions()
-        -verify_slack_request()
-        -handle_fix_interface()
-    }
+    E1 --> P1 --> P2 --> P3 --> O1
+    P3 -->|Auto remediate| P5 --> O2 --> O3
+    E2 --> P4 --> P2 --> P5 --> O2 --> O3
+```
+
+## Configuration Structure
+
+```mermaid
+graph TD
+    subgraph ConfigFiles
+        C1[compliance/config.yaml]
+        C2[slackbot/config.yaml]
+        C3[slackbot/.env]
+    end
     
-    ComplianceApplication --> CiscoDeviceManager : uses
-    ComplianceApplication --> SlackNotifier : uses
-    FlaskServer --> CiscoDeviceManager : uses
-    FlaskServer --> SlackNotifier : uses
+    subgraph SharedSettings
+        S1[Cisco credentials]
+        S2[Slack webhook URL]
+        S3[Timeout values]
+        S4[Channel settings]
+    end
+    
+    subgraph ComplianceSettings
+        CS1[Auto remediate flag]
+    end
+    
+    subgraph SlackbotSettings
+        SS1[Interactive buttons flag]
+        SS2[ngrok URL]
+        SS3[Verify token]
+    end
+    
+    C1 --> S1
+    C1 --> S2
+    C1 --> S3
+    C1 --> S4
+    C1 --> CS1
+    
+    C2 --> S1
+    C2 --> S2
+    C2 --> S3
+    C2 --> S4
+    C2 --> SS1
+    C2 --> SS2
+    
+    C3 --> SS3
 ```
