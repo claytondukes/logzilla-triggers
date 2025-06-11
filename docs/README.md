@@ -1,10 +1,12 @@
-# Cisco Interface Compliance with Slack Interactive Integration
+# LogZilla Cisco Interface Compliance - Documentation
 
-This project extends LogZilla's custom trigger script capabilities by adding interactive Slack buttons for network interface remediation. Unlike the basic example in the [LogZilla documentation](https://docs.logzilla.net/02_Creating_Triggers/03_Trigger_Scripts/#custom-scripts) that automatically brings interfaces back up, this implementation gives network operators the choice to manually approve remediation actions via Slack buttons.
+## About This Documentation
 
-## System Architecture
+This document serves as the entry point to the comprehensive technical documentation for the LogZilla Cisco Interface Compliance solution with Slack integration. This documentation is intended for developers, operators, and administrators who need detailed information about the system architecture, components, setup, and operation.
 
-The solution consists of two main components that operate independently but work together to provide the full functionality:
+## In-Depth System Architecture
+
+The solution consists of two main components that operate independently but work together to provide the complete functionality:
 
 ```mermaid
 flowchart LR
@@ -16,6 +18,17 @@ flowchart LR
     F[shared code] -->|Used by| A
     F -->|Used by| C
 ```
+
+### Technical Workflow
+
+1. **Event Detection**: LogZilla detects network events through syslog messages
+2. **Trigger Activation**: LogZilla trigger executes the compliance script
+3. **Event Analysis**: Compliance script parses the event and connects to the device
+4. **Slack Notification**: Interactive message with buttons sent to Slack
+5. **Operator Decision**: Network operator clicks a button (Fix or Acknowledge)
+6. **Callback Processing**: Slack interactive server receives the button click
+7. **Remediation**: Server connects to the Cisco device and executes appropriate commands
+8. **Status Update**: Server sends confirmation back to Slack
 
 ### Components
 

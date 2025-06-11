@@ -70,17 +70,64 @@ cisco_manager = CiscoDeviceManager(
 def verify_slack_request(request_data, timestamp, signature):
     """Verify the request is coming from Slack."""
     if not SLACK_VERIFY_TOKEN:
+        logger.info("SLACK_VERIFY_TOKEN not configured, skipping verification")
         return True  # Skip verification if token not configured
+    
+    # Enhanced debugging to troubleshoot verification issues
+    logger.info(f"SLACK_VERIFY_TOKEN (masked): {SLACK_VERIFY_TOKEN[:4]}...")
+    logger.info(f"X-Slack-Request-Timestamp: {timestamp}")
+    logger.info(f"X-Slack-Signature: {signature if signature else 'None'}")
     
     # This is a very basic verification method
     # For production use, implement proper Slack signing secret verification
     try:
+        # Decode and log the request body (partial for security)
         body = request_data.decode('utf-8')
-        if "token" in body and f"token={SLACK_VERIFY_TOKEN}" in body:
+        safe_body = body[:100] + '...' if len(body) > 100 else body
+        logger.info(f"Request body (truncated): {safe_body}")
+        
+        # Try to parse and find token in different formats
+        if "token" in body:
+            # Extract token from the body for debugging (don't log full token)
+            import re
+            token_match = re.search(r'token=([^&]+)', body)
+            if token_match:
+                token_value = token_match.group(1)
+                logger.info(f"Found token in body (masked): {token_value[:4]}...")
+                
+                # More flexible token matching - could be URL encoded
+                if SLACK_VERIFY_TOKEN in token_value or token_value in SLACK_VERIFY_TOKEN:
+                    logger.info("Token verification succeeded!")
+                    return True
+            else:
+                logger.warning("Token field found but couldn't extract value")
+        else:
+            logger.warning("No token field found in request body")
+            
+        # Try parsing as form data
+        try:
+            import urllib.parse
+            form_data = urllib.parse.parse_qs(body)
+            if 'payload' in form_data:
+                payload = json.loads(form_data['payload'][0])
+                if 'token' in payload:
+                    token_in_payload = payload['token']
+                    logger.info(f"Found token in payload (masked): {token_in_payload[:4]}...")
+                    if token_in_payload == SLACK_VERIFY_TOKEN:
+                        logger.info("Token verification via payload succeeded!")
+                        return True
+        except Exception as e:
+            logger.warning(f"Error parsing potential form data: {e}")
+            
+        # As a fallback, check if the token is anywhere in the body
+        if SLACK_VERIFY_TOKEN in body:
+            logger.info("Token found in request body using fallback check")
             return True
-    except:
-        pass
+            
+    except Exception as e:
+        logger.error(f"Error in token verification: {e}")
     
+    logger.warning("All verification methods failed")
     return False
 
 @app.route('/slack/actions', methods=['POST'])

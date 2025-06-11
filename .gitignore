@@ -12,7 +12,7 @@ repomix-output.xml
 **/*.env
 
 # Config files with sensitive data
-config.yaml
+.config.yaml
 **/config.yaml
 
 # Python
